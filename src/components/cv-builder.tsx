@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import { useEffect, useState } from "react";
 import { useFieldArray, useForm, useWatch } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
@@ -219,11 +220,15 @@ function ModeButton({
   );
 }
 
+const DRAFT_STORAGE_KEY = "paballo-cv-draft-v1";
+
 export function CvBuilder() {
   const form = useForm<ResumeFormValues>({
     resolver: zodResolver(resumeFormSchema),
     defaultValues: defaultResumeValues,
   });
+  const [hasLoadedDraft, setHasLoadedDraft] = useState(false);
+  const [saveState, setSaveState] = useState<"loading" | "saving" | "saved">("loading");
 
   const values = useWatch({ control: form.control }) as ResumeFormValues;
   const data = normalizeResumeData(values ?? defaultResumeValues);
@@ -238,6 +243,50 @@ export function CvBuilder() {
   });
   const languageArray = useFieldArray({ control: form.control, name: "languages.items" });
   const referenceArray = useFieldArray({ control: form.control, name: "references.items" });
+
+  useEffect(() => {
+    try {
+      const storedDraft = window.localStorage.getItem(DRAFT_STORAGE_KEY);
+
+      if (!storedDraft) {
+        setHasLoadedDraft(true);
+        setSaveState("saved");
+        return;
+      }
+
+      const parsedDraft = resumeFormSchema.safeParse(JSON.parse(storedDraft));
+
+      if (parsedDraft.success) {
+        form.reset(parsedDraft.data);
+      }
+    } catch {
+      window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+    } finally {
+      setHasLoadedDraft(true);
+      setSaveState("saved");
+    }
+  }, [form]);
+
+  useEffect(() => {
+    if (!hasLoadedDraft || !values) {
+      return;
+    }
+
+    setSaveState("saving");
+
+    const timeoutId = window.setTimeout(() => {
+      window.localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(values));
+      setSaveState("saved");
+    }, 250);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [hasLoadedDraft, values]);
+
+  function resetDraft() {
+    form.reset(defaultResumeValues);
+    window.localStorage.removeItem(DRAFT_STORAGE_KEY);
+    setSaveState("saved");
+  }
 
   return (
     <main className="mx-auto w-full max-w-6xl px-4 py-4 sm:px-5 lg:px-8">
@@ -265,6 +314,22 @@ export function CvBuilder() {
               label="Download black and white"
               className="w-full border border-line bg-white text-foreground"
             />
+          </div>
+          <div className="flex flex-col gap-3 rounded-2xl border border-line bg-background px-4 py-3 text-sm text-muted sm:flex-row sm:items-center sm:justify-between">
+            <p>
+              {saveState === "loading"
+                ? "Opening your draft..."
+                : saveState === "saving"
+                  ? "Saving your changes on this device..."
+                  : "Your changes are saved on this device and will still be here after a reload."}
+            </p>
+            <button
+              type="button"
+              onClick={resetDraft}
+              className="text-left font-medium text-foreground underline decoration-line underline-offset-4 sm:text-right"
+            >
+              Start over with the example draft
+            </button>
           </div>
         </div>
       </section>
